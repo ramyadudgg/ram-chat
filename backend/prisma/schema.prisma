@@ -1,0 +1,79 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Profile {
+  id String @id @db.Uuid
+  username String? @unique
+  displayName String?
+  avatarUrl String?
+  bio String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  members ChatMember[]
+  messages Message[]
+  reads MessageRead[]
+}
+
+model Chat {
+  id String @id @default(uuid()) @db.Uuid
+  isGroup Boolean @default(false)
+  name String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  members ChatMember[]
+  messages Message[]
+}
+
+model ChatMember {
+  chatId String @db.Uuid
+  userId String @db.Uuid
+  joinedAt DateTime @default(now())
+  lastReadAt DateTime?
+  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@id([chatId, userId])
+  @@index([userId])
+}
+
+model Message {
+  id String @id @default(uuid()) @db.Uuid
+  chatId String @db.Uuid
+  senderId String @db.Uuid
+  body String?
+  messageType String @default("text")
+  createdAt DateTime @default(now())
+  editedAt DateTime?
+  deletedAt DateTime?
+  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sender Profile @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  reads MessageRead[]
+  attachments Attachment[]
+  @@index([chatId, createdAt(sort: Desc)])
+}
+
+model MessageRead {
+  messageId String @db.Uuid
+  userId String @db.Uuid
+  readAt DateTime @default(now())
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@id([messageId, userId])
+  @@index([userId])
+}
+
+model Attachment {
+  id String @id @default(uuid()) @db.Uuid
+  messageId String @db.Uuid
+  storagePath String
+  mimeType String?
+  fileName String?
+  sizeBytes BigInt?
+  createdAt DateTime @default(now())
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+}
