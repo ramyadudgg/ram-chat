@@ -31,15 +31,11 @@ function App() {
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  React.useEffect(() => {
-    if (user) enterChatApp(user);
-  }, [user]);
+  React.useEffect(() => { if (user) enterChatApp(user); }, [user]);
 
   async function enterChatApp(currentUser) {
     const name = (currentUser.email || '').split('@')[0] || 'Ram User';
-    const { data, error } = await supabase.rpc('ensure_my_profile', {
-      p_email: currentUser.email || '', p_display_name: name, p_username: name
-    });
+    const { data, error } = await supabase.rpc('ensure_my_profile', { p_email: currentUser.email || '', p_display_name: name, p_username: name });
     if (!error) setProfile(data);
     await loadChats();
   }
@@ -47,8 +43,7 @@ function App() {
   async function loadChats() {
     setChatLoading(true);
     const { data, error } = await supabase.rpc('get_my_chats');
-    if (!error) setChats(data || []);
-    else setMessage(error.message);
+    if (!error) setChats(data || []); else setMessage(error.message);
     setChatLoading(false);
   }
 
@@ -57,14 +52,10 @@ function App() {
     try {
       if (!email || !password) throw new Error('Email aur password dono bharen.');
       if (password.length < 6) throw new Error('Password kam se kam 6 characters ka ho.');
-      const result = mode === 'login'
-        ? await supabase.auth.signInWithPassword({ email, password })
-        : await supabase.auth.signUp({ email, password });
+      const result = mode === 'login' ? await supabase.auth.signInWithPassword({ email, password }) : await supabase.auth.signUp({ email, password });
       if (result.error) throw result.error;
-      if (mode === 'signup' && !result.data.session) setMessage('Account ban gaya. Email verification ke baad Login karein.');
-      else setMessage('Login successful ✓');
-    } catch (err) { setMessage(err.message || 'Authentication failed.'); }
-    finally { setLoading(false); }
+      if (mode === 'signup' && !result.data.session) setMessage('Account ban gaya. Email verification ke baad Login karein.'); else setMessage('Login successful ✓');
+    } catch (err) { setMessage(err.message || 'Authentication failed.'); } finally { setLoading(false); }
   }
 
   async function logout() {
@@ -86,33 +77,43 @@ function App() {
   }
 
   async function loadMessages(chat) {
+    if (!chat?.chat_id) return;
     setSelectedChat(chat);
     const { data, error } = await supabase.from('messages').select('id,chat_id,sender_id,body,created_at').eq('chat_id', chat.chat_id).order('created_at', { ascending: true });
-    if (!error) setMessages(data || []);
-    else setMessage(error.message);
+    if (!error) setMessages(data || []); else setMessage(error.message);
   }
 
+  // Realtime subscription: keep the open chat synchronized without duplicates.
   React.useEffect(() => {
-    if (!selectedChat) return;
-    const channel = supabase.channel(`chat-${selectedChat.chat_id}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${selectedChat.chat_id}` }, payload => {
-      setMessages(prev => prev.some(m => m.id === payload.new.id) ? prev : [...prev, payload.new]);
-      loadChats();
-    }).subscribe();
+    if (!selectedChat?.chat_id) return;
+    const channel = supabase.channel(`chat-${selectedChat.chat_id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${selectedChat.chat_id}` }, payload => {
+        setMessages(prev => prev.some(m => m.id === payload.new.id) ? prev : [...prev, payload.new]);
+        loadChats();
+      })
+      .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [selectedChat?.chat_id]);
 
   async function sendMessage(e) {
     e.preventDefault();
-    const body = text.trim(); if (!body || !selectedChat || !user) return;
+    const body = text.trim();
+    if (!body || !selectedChat?.chat_id || !user) return;
     setText('');
-    const { error } = await supabase.from('messages').insert({ chat_id: selectedChat.chat_id, sender_id: user.id, body, message_type: 'text' });
-    if (error) { setText(body); setMessage(error.message); }
-    else await loadChats();
+    const tempId = `temp-${Date.now()}`;
+    const optimistic = { id: tempId, chat_id: selectedChat.chat_id, sender_id: user.id, body, created_at: new Date().toISOString(), _optimistic: true };
+    setMessages(prev => [...prev, optimistic]);
+    const { data, error } = await supabase.from('messages').insert({ chat_id: selectedChat.chat_id, sender_id: user.id, body, message_type: 'text' }).select('id,chat_id,sender_id,body,created_at').single();
+    if (error) {
+      setMessages(prev => prev.filter(m => m.id !== tempId));
+      setText(body); setMessage(error.message); return;
+    }
+    setMessages(prev => prev.map(m => m.id === tempId ? data : m));
+    await loadChats();
   }
 
   async function backToChats() {
-    setScreen('chats');
-    await loadChats();
+    setSelectedChat(null); setMessages([]); setScreen('chats'); await loadChats();
   }
 
   if (user) return <div className="app">
