@@ -48,6 +48,7 @@ function App() {
     setChatLoading(true);
     const { data, error } = await supabase.rpc('get_my_chats');
     if (!error) setChats(data || []);
+    else setMessage(error.message);
     setChatLoading(false);
   }
 
@@ -67,28 +68,28 @@ function App() {
   }
 
   async function logout() {
-    await supabase.auth.signOut(); setUser(null); setProfile(null); setChats([]); setSelectedChat(null);
+    await supabase.auth.signOut(); setUser(null); setProfile(null); setChats([]); setSelectedChat(null); setMessages([]);
   }
 
   async function findUsers(e) {
     const value = e.target.value; setSearch(value);
     if (value.trim().length < 2) { setUsers([]); return; }
-    const { data } = await supabase.rpc('search_users', { p_query: value.trim() });
-    setUsers(data || []);
+    const { data, error } = await supabase.rpc('search_users', { p_query: value.trim() });
+    if (!error) setUsers(data || []);
   }
 
   async function startChat(target) {
     const { data, error } = await supabase.rpc('create_direct_chat', { p_target_user: target.id });
     if (error) { setMessage(error.message); return; }
     const chat = { chat_id: data, other_user_id: target.id, other_username: target.username, other_display_name: target.display_name, other_avatar_url: target.avatar_url, last_body: '', last_created_at: null };
-    setSelectedChat(chat); setScreen('chat'); setSearch(''); setUsers([]); await loadMessages(chat);
-    await loadChats();
+    setSelectedChat(chat); setScreen('chat'); setSearch(''); setUsers([]); await loadMessages(chat); await loadChats();
   }
 
   async function loadMessages(chat) {
     setSelectedChat(chat);
-    const { data } = await supabase.from('messages').select('id,chat_id,sender_id,body,created_at').eq('chat_id', chat.chat_id).order('created_at', { ascending: true });
-    setMessages(data || []);
+    const { data, error } = await supabase.from('messages').select('id,chat_id,sender_id,body,created_at').eq('chat_id', chat.chat_id).order('created_at', { ascending: true });
+    if (!error) setMessages(data || []);
+    else setMessage(error.message);
   }
 
   React.useEffect(() => {
@@ -109,17 +110,22 @@ function App() {
     else await loadChats();
   }
 
+  async function backToChats() {
+    setScreen('chats');
+    await loadChats();
+  }
+
   if (user) return <div className="app">
     <header><div className="logo">R</div><div><h1>Ram Chat</h1><p>Simple • Fast • Private</p></div><button className="logout" onClick={logout}>Logout</button></header>
     {screen === 'chat' && selectedChat ? <main className="chat-main">
-      <div className="chat-head"><button className="back" onClick={() => setScreen('chats')}>←</button><div><strong>{selectedChat.other_display_name || selectedChat.other_username}</strong><small>@{selectedChat.other_username}</small></div></div>
+      <div className="chat-head"><button className="back" onClick={backToChats}>←</button><div><strong>{selectedChat.other_display_name || selectedChat.other_username}</strong><small>@{selectedChat.other_username}</small></div></div>
       <div className="messages">{messages.length === 0 ? <div className="empty">No messages yet. Say hello 👋</div> : messages.map(m => <div key={m.id} className={m.sender_id === user.id ? 'bubble mine' : 'bubble'}>{m.body}<small>{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</small></div>)}</div>
       <form className="composer" onSubmit={sendMessage}><input value={text} onChange={e => setText(e.target.value)} placeholder="Type a message…" autoFocus /><button type="submit">➤</button></form>
     </main> : <main><section className="card chat-card">
       <div className="welcome-row"><div><h2>Chats 💬</h2><p>{profile?.display_name || user.email}</p></div><button onClick={() => setScreen('new')}>＋ New Chat</button></div>
       {chatLoading ? <div className="empty">Loading chats…</div> : chats.length === 0 ? <div className="empty">No chats yet.<br/>Tap <b>＋ New Chat</b> to find a user.</div> : chats.map(c => <button className="chat-row" key={c.chat_id} onClick={() => { setScreen('chat'); loadMessages(c); }}><div className="avatar">{(c.other_display_name || '?')[0].toUpperCase()}</div><div className="chat-info"><strong>{c.other_display_name || c.other_username}</strong><span>{c.last_body || 'Start chatting'}</span></div><small>{c.last_created_at ? new Date(c.last_created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : ''}</small></button>)}
     </section></main>}
-    {screen === 'new' && <div className="overlay"><section className="card new-card"><div className="welcome-row"><h2>New Chat</h2><button className="back" onClick={() => {setScreen('chats');setSearch('');setUsers([])}}>✕</button></div><input className="search" value={search} onChange={findUsers} placeholder="Search username or name…" autoFocus />{users.length === 0 && search.length >= 2 ? <div className="empty">No user found.</div> : users.map(u => <button className="user-row" key={u.id} onClick={() => startChat(u)}><div className="avatar">{(u.display_name || u.username || '?')[0].toUpperCase()}</div><div><strong>{u.display_name || u.username}</strong><span>@{u.username}</span></div></button>)}</section></div>}
+    {screen === 'new' && <div className="overlay"><section className="card new-card"><div className="welcome-row"><h2>New Chat</h2><button className="back" onClick={() => {setScreen('chats');setSearch('');setUsers([]);loadChats()}}>✕</button></div><input className="search" value={search} onChange={findUsers} placeholder="Search username or name…" autoFocus />{users.length === 0 && search.length >= 2 ? <div className="empty">No user found.</div> : users.map(u => <button className="user-row" key={u.id} onClick={() => startChat(u)}><div className="avatar">{(u.display_name || u.username || '?')[0].toUpperCase()}</div><div><strong>{u.display_name || u.username}</strong><span>@{u.username}</span></div></button>)}</section></div>}
   </div>;
 
   if (started) return <div className="app"><header><div className="logo">R</div><div><h1>Ram Chat</h1><p>Simple • Fast • Private</p></div></header><main><section className="card"><h2>{mode === 'login' ? 'Login to Ram Chat' : 'Create your account'}</h2><p>{mode === 'login' ? 'Enter your details to continue.' : 'Create your Ram Chat account.'}</p><form onSubmit={submit}><input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" /><input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} /><button type="submit" disabled={loading}>{loading ? 'Please wait…' : mode === 'login' ? 'Login' : 'Sign Up'}</button></form>{message && <div className="status">{message}</div>}<button className="secondary" type="button" onClick={() => {setMode(mode === 'login' ? 'signup' : 'login');setMessage('')}}>{mode === 'login' ? 'Create new account' : 'Already have an account? Login'}</button></section></main></div>;
