@@ -1,11 +1,10 @@
-import type { CapacitorConfig } from '@capacitor/cli';
-
-const config: CapacitorConfig = {
+const config = {
   appId: 'com.ramchat.app',
   appName: 'Ram Chat',
   webDir: 'dist',
   bundledWebRuntime: false,
   server: {
+    url: 'https://ram-chat-web.onrender.com',
     androidScheme: 'https'
   }
 };
