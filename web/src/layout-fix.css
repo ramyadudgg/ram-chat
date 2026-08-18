@@ -1,0 +1,24 @@
+/* Keep the left chat list anchored to the top. */
+.chat-main .chat-sidebar {
+  align-self: stretch !important;
+  justify-content: flex-start !important;
+  align-items: stretch !important;
+  height: 100% !important;
+}
+.chat-main .sidebar-top,
+.chat-main .chat-list,
+.chat-main .sidebar-footer {
+  flex-shrink: 0;
+}
+.chat-main .chat-list {
+  flex: 1 1 auto !important;
+  align-content: flex-start !important;
+  justify-content: flex-start !important;
+  min-height: 0;
+}
+.chat-main .chat-row {
+  align-self: stretch !important;
+}
+@media (max-width: 650px) {
+  .chat-main .chat-sidebar { display: none; }
+}
