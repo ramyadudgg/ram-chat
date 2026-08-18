@@ -23,6 +23,7 @@ function App() {
   const [users, setUsers] = React.useState([]);
   const [text, setText] = React.useState('');
   const [chatLoading, setChatLoading] = React.useState(false);
+  const [openMenu, setOpenMenu] = React.useState(null);
 
   React.useEffect(() => {
     fetch(`${API}/health`).then(r => r.json()).then(d => setStatus(d.ok ? 'Server connected ✓' : 'Server error')).catch(() => setStatus('Server unavailable'));
@@ -119,6 +120,7 @@ function App() {
     if (!messageId || !user) return;
     if (!window.confirm('Delete this message?')) return;
     const oldMessages = messages;
+    setOpenMenu(null);
     setMessages(prev => prev.filter(m => m.id !== messageId));
     const { error } = await supabase.from('messages').update({ deleted_at: new Date().toISOString(), body: null }).eq('id', messageId).eq('sender_id', user.id);
     if (error) {
@@ -130,14 +132,14 @@ function App() {
   }
 
   async function backToChats() {
-    setSelectedChat(null); setMessages([]); setScreen('chats'); await loadChats();
+    setSelectedChat(null); setMessages([]); setScreen('chats'); setOpenMenu(null); await loadChats();
   }
 
-  if (user) return <div className="app">
-    <header><div className="logo">R</div><div><h1>Ram Chat</h1><p>Simple • Fast • Private</p></div><button className="logout" onClick={logout}>Logout</button></header>
+  if (user) return <div className="app" onClick={() => openMenu && setOpenMenu(null)}>
+    <header><div className="logo">R</div><div><h1>Ram Chat</h1><p>Simple • Fast • Private</p></div><button className="logout" onClick={e => { e.stopPropagation(); logout(); }}>Logout</button></header>
     {screen === 'chat' && selectedChat ? <main className="chat-main">
       <div className="chat-head"><button className="back" onClick={backToChats}>←</button><div><strong>{selectedChat.other_display_name || selectedChat.other_username}</strong><small>@{selectedChat.other_username}</small></div></div>
-      <div className="messages">{messages.length === 0 ? <div className="empty">No messages yet. Say hello 👋</div> : messages.map(m => <div key={m.id} className={m.sender_id === user.id ? 'bubble-wrap mine-wrap' : 'bubble-wrap'}><div className={m.sender_id === user.id ? 'bubble mine' : 'bubble'}>{m.deleted_at ? <em>Message deleted</em> : <>{m.body}<small>{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</small></>}{m.sender_id === user.id && !m.deleted_at && !m._optimistic && <button className="delete-message" type="button" onClick={() => deleteMessage(m.id)} title="Delete message">Delete</button>}</div></div>)}</div>
+      <div className="messages">{messages.length === 0 ? <div className="empty">No messages yet. Say hello 👋</div> : messages.map(m => <div key={m.id} className={m.sender_id === user.id ? 'bubble-wrap mine-wrap' : 'bubble-wrap'}><div className={m.sender_id === user.id ? 'bubble mine' : 'bubble'}>{m.deleted_at ? <em>Message deleted</em> : <>{m.body}<small>{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</small>{m.sender_id === user.id && !m._optimistic && <><button className="message-menu-button" type="button" onClick={e => { e.stopPropagation(); setOpenMenu(openMenu === m.id ? null : m.id); }} aria-label="Message options">⋮</button>{openMenu === m.id && <div className="message-menu" onClick={e => e.stopPropagation()}><button type="button" onClick={() => deleteMessage(m.id)}>Delete</button></div>}</>}</>}</div></div>)}</div>
       <form className="composer" onSubmit={sendMessage}><input value={text} onChange={e => setText(e.target.value)} placeholder="Type a message…" autoFocus /><button type="submit">➤</button></form>
     </main> : <main><section className="card chat-card">
       <div className="welcome-row"><div><h2>Chats 💬</h2><p>{profile?.display_name || user.email}</p></div><button onClick={() => setScreen('new')}>＋ New Chat</button></div>
