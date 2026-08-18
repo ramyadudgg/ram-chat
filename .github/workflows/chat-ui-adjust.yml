@@ -1,0 +1,39 @@
+name: Apply chat UI adjustment
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  adjust-chat-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply chat area styling once
+        shell: bash
+        run: |
+          FILE="web/src/style.css"
+          MARKER="/* RAM_CHAT_AREA_ADJUSTMENT_V2 */"
+          if grep -q "$MARKER" "$FILE"; then
+            echo "Chat UI adjustment already applied."
+            exit 0
+          fi
+          cat >> "$FILE" <<'EOF'
+
+/* RAM_CHAT_AREA_ADJUSTMENT_V2 */
+.chat-main{grid-template-columns:430px minmax(0,1fr)}
+.chat-card .welcome-row,.chat-card>.chat-row,.chat-card>.empty{width:430px}
+.chat-card:before{width:394px}
+.chat-card:after{left:430px;transform:translateY(-55px);font-size:16px}
+@media(max-width:900px){.chat-main{grid-template-columns:320px minmax(0,1fr)}.chat-card .welcome-row,.chat-card>.chat-row,.chat-card>.empty{width:320px}.chat-card:before{width:284px}.chat-card:after{left:320px}}
+EOF
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$FILE"
+          git commit -m "style: enlarge and raise chat area"
+          git push
