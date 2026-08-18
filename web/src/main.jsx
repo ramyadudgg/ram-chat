@@ -79,16 +79,19 @@ function App() {
   async function loadMessages(chat) {
     if (!chat?.chat_id) return;
     setSelectedChat(chat);
-    const { data, error } = await supabase.from('messages').select('id,chat_id,sender_id,body,created_at').eq('chat_id', chat.chat_id).order('created_at', { ascending: true });
+    const { data, error } = await supabase.from('messages').select('id,chat_id,sender_id,body,created_at,deleted_at').eq('chat_id', chat.chat_id).order('created_at', { ascending: true });
     if (!error) setMessages(data || []); else setMessage(error.message);
   }
 
-  // Realtime subscription: keep the open chat synchronized without duplicates.
   React.useEffect(() => {
     if (!selectedChat?.chat_id) return;
     const channel = supabase.channel(`chat-${selectedChat.chat_id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${selectedChat.chat_id}` }, payload => {
         setMessages(prev => prev.some(m => m.id === payload.new.id) ? prev : [...prev, payload.new]);
+        loadChats();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `chat_id=eq.${selectedChat.chat_id}` }, payload => {
+        setMessages(prev => prev.map(m => m.id === payload.new.id ? payload.new : m));
         loadChats();
       })
       .subscribe();
@@ -103,12 +106,26 @@ function App() {
     const tempId = `temp-${Date.now()}`;
     const optimistic = { id: tempId, chat_id: selectedChat.chat_id, sender_id: user.id, body, created_at: new Date().toISOString(), _optimistic: true };
     setMessages(prev => [...prev, optimistic]);
-    const { data, error } = await supabase.from('messages').insert({ chat_id: selectedChat.chat_id, sender_id: user.id, body, message_type: 'text' }).select('id,chat_id,sender_id,body,created_at').single();
+    const { data, error } = await supabase.from('messages').insert({ chat_id: selectedChat.chat_id, sender_id: user.id, body, message_type: 'text' }).select('id,chat_id,sender_id,body,created_at,deleted_at').single();
     if (error) {
       setMessages(prev => prev.filter(m => m.id !== tempId));
       setText(body); setMessage(error.message); return;
     }
     setMessages(prev => prev.map(m => m.id === tempId ? data : m));
+    await loadChats();
+  }
+
+  async function deleteMessage(messageId) {
+    if (!messageId || !user) return;
+    if (!window.confirm('Delete this message?')) return;
+    const oldMessages = messages;
+    setMessages(prev => prev.filter(m => m.id !== messageId));
+    const { error } = await supabase.from('messages').update({ deleted_at: new Date().toISOString(), body: null }).eq('id', messageId).eq('sender_id', user.id);
+    if (error) {
+      setMessages(oldMessages);
+      setMessage(`Message delete nahi hua: ${error.message}`);
+      return;
+    }
     await loadChats();
   }
 
@@ -120,7 +137,7 @@ function App() {
     <header><div className="logo">R</div><div><h1>Ram Chat</h1><p>Simple • Fast • Private</p></div><button className="logout" onClick={logout}>Logout</button></header>
     {screen === 'chat' && selectedChat ? <main className="chat-main">
       <div className="chat-head"><button className="back" onClick={backToChats}>←</button><div><strong>{selectedChat.other_display_name || selectedChat.other_username}</strong><small>@{selectedChat.other_username}</small></div></div>
-      <div className="messages">{messages.length === 0 ? <div className="empty">No messages yet. Say hello 👋</div> : messages.map(m => <div key={m.id} className={m.sender_id === user.id ? 'bubble mine' : 'bubble'}>{m.body}<small>{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</small></div>)}</div>
+      <div className="messages">{messages.length === 0 ? <div className="empty">No messages yet. Say hello 👋</div> : messages.map(m => <div key={m.id} className={m.sender_id === user.id ? 'bubble-wrap mine-wrap' : 'bubble-wrap'}><div className={m.sender_id === user.id ? 'bubble mine' : 'bubble'}>{m.deleted_at ? <em>Message deleted</em> : <>{m.body}<small>{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</small></>}{m.sender_id === user.id && !m.deleted_at && !m._optimistic && <button className="delete-message" type="button" onClick={() => deleteMessage(m.id)} title="Delete message">Delete</button>}</div></div>)}</div>
       <form className="composer" onSubmit={sendMessage}><input value={text} onChange={e => setText(e.target.value)} placeholder="Type a message…" autoFocus /><button type="submit">➤</button></form>
     </main> : <main><section className="card chat-card">
       <div className="welcome-row"><div><h2>Chats 💬</h2><p>{profile?.display_name || user.email}</p></div><button onClick={() => setScreen('new')}>＋ New Chat</button></div>
