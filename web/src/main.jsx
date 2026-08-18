@@ -4,6 +4,12 @@ import './style.css';
 import { supabase } from './supabase';
 
 const API = 'https://ram-chat.onrender.com';
+const HIDDEN_KEY = 'ram-chat-hidden-messages';
+
+function getHiddenMessages() {
+  try { return JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]'); } catch { return []; }
+}
+function saveHiddenMessages(ids) { localStorage.setItem(HIDDEN_KEY, JSON.stringify(ids)); }
 
 function App() {
   const [status, setStatus] = React.useState('Checking server…');
@@ -116,12 +122,22 @@ function App() {
     await loadChats();
   }
 
-  async function deleteMessage(messageId) {
+  function deleteForMe(messageId) {
+    if (!messageId) return;
+    if (!window.confirm('Delete this message for you?')) return;
+    const hidden = getHiddenMessages();
+    if (!hidden.includes(messageId)) hidden.push(messageId);
+    saveHiddenMessages(hidden);
+    setMessages(prev => prev.filter(m => m.id !== messageId));
+    setOpenMenu(null);
+  }
+
+  async function deleteForEveryone(messageId) {
     if (!messageId || !user) return;
-    if (!window.confirm('Delete this message?')) return;
+    if (!window.confirm('Delete this message for everyone?')) return;
     const oldMessages = messages;
     setOpenMenu(null);
-    setMessages(prev => prev.filter(m => m.id !== messageId));
+    setMessages(prev => prev.map(m => m.id === messageId ? { ...m, deleted_at: new Date().toISOString(), body: null } : m));
     const { error } = await supabase.from('messages').update({ deleted_at: new Date().toISOString(), body: null }).eq('id', messageId).eq('sender_id', user.id);
     if (error) {
       setMessages(oldMessages);
@@ -135,11 +151,20 @@ function App() {
     setSelectedChat(null); setMessages([]); setScreen('chats'); setOpenMenu(null); await loadChats();
   }
 
+  function renderMessageMenu(m) {
+    if (openMenu !== m.id) return null;
+    const mine = m.sender_id === user.id;
+    return <div className="message-menu" onClick={e => e.stopPropagation()}>
+      <button type="button" onClick={() => deleteForMe(m.id)}>🗑️ Delete for me</button>
+      {mine && !m._optimistic && <button type="button" onClick={() => deleteForEveryone(m.id)}>🗑️ Delete for everyone</button>}
+    </div>;
+  }
+
   if (user) return <div className="app" onClick={() => openMenu && setOpenMenu(null)}>
     <header><div className="logo">R</div><div><h1>Ram Chat</h1><p>Simple • Fast • Private</p></div><button className="logout" onClick={e => { e.stopPropagation(); logout(); }}>Logout</button></header>
     {screen === 'chat' && selectedChat ? <main className="chat-main">
       <div className="chat-head"><button className="back" onClick={backToChats}>←</button><div><strong>{selectedChat.other_display_name || selectedChat.other_username}</strong><small>@{selectedChat.other_username}</small></div></div>
-      <div className="messages">{messages.length === 0 ? <div className="empty">No messages yet. Say hello 👋</div> : messages.map(m => <div key={m.id} className={m.sender_id === user.id ? 'bubble-wrap mine-wrap' : 'bubble-wrap'}><div className={m.sender_id === user.id ? 'bubble mine' : 'bubble'}>{m.deleted_at ? <em>Message deleted</em> : <>{m.body}<small>{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</small>{m.sender_id === user.id && !m._optimistic && <><button className="message-menu-button" type="button" onClick={e => { e.stopPropagation(); setOpenMenu(openMenu === m.id ? null : m.id); }} aria-label="Message options">⋮</button>{openMenu === m.id && <div className="message-menu" onClick={e => e.stopPropagation()}><button type="button" onClick={() => deleteMessage(m.id)}>Delete</button></div>}</>}</>}</div></div>)}</div>
+      <div className="messages">{messages.length === 0 ? <div className="empty">No messages yet. Say hello 👋</div> : messages.filter(m => !getHiddenMessages().includes(m.id)).map(m => <div key={m.id} className={m.sender_id === user.id ? 'bubble-wrap mine-wrap' : 'bubble-wrap'}><div className={m.sender_id === user.id ? 'bubble mine' : 'bubble'}>{m.deleted_at ? <em>Message deleted</em> : <>{m.body}<small>{new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</small>{!m._optimistic && <><button className="message-menu-button" type="button" onClick={e => { e.stopPropagation(); setOpenMenu(openMenu === m.id ? null : m.id); }} aria-label="Message options">⋮</button>{renderMessageMenu(m)}</>}</>}</div></div>)}</div>
       <form className="composer" onSubmit={sendMessage}><input value={text} onChange={e => setText(e.target.value)} placeholder="Type a message…" autoFocus /><button type="submit">➤</button></form>
     </main> : <main><section className="card chat-card">
       <div className="welcome-row"><div><h2>Chats 💬</h2><p>{profile?.display_name || user.email}</p></div><button onClick={() => setScreen('new')}>＋ New Chat</button></div>
